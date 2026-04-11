@@ -23,7 +23,8 @@ jobs:
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
-          CF_RECORD_NAME: ${{ secrets.CF_RECORD_NAME }}
-          TARGET_COUNTRY: ${{ secrets.TARGET_COUNTRY }}
+          # 传递多任务变量
+          CF_RECORD_NAMES: ${{ secrets.CF_RECORD_NAMES }}
+          TARGET_COUNTRIES: ${{ secrets.TARGET_COUNTRIES }}
           SOURCE_URL: ${{ secrets.SOURCE_URL }}
         run: python update_dns.py
