@@ -2,74 +2,70 @@ import os
 import requests
 import pandas as pd
 
-# 从环境变量读取配置
+# 配置
 API_TOKEN = os.getenv('CF_API_TOKEN')
 ZONE_ID = os.getenv('CF_ZONE_ID')
 RECORD_NAME = os.getenv('CF_RECORD_NAME')
+TARGET_COUNTRY = 'CA' # 可根据需要修改
 SOURCE_URL = "https://raw.githubusercontent.com/xgonce/Cloudflare_IP/refs/heads/main/result.csv"
 
-def get_best_ip():
+def get_top_5_ips():
     try:
-        # 读取 CSV，注意原文件可能没有 Header，根据图片看是有 Header 的
         df = pd.read_csv(SOURCE_URL)
-        
-        # --- 核心筛选逻辑 ---
-        # 1. 筛选 IP 列与 cf-meta-ip 列相同的行
-        # 2. 这里的列名需与 CSV 文件实际表头一致，如果图片里是 'IP' 和 'cf-meta-ip'
-        mask = df['IP'] == df['cf-meta-ip']
+        # 1. 筛选：IP一致性 + 归属国
+        mask = (df['IP'] == df['cf-meta-ip']) & (df['CF归属国'] == TARGET_COUNTRY)
         filtered_df = df[mask].copy()
-        
+
         if filtered_df.empty:
-            print("没有找到 IP 与 cf-meta-ip 相同的匹配项")
-            return None
+            print(f"区域 {TARGET_COUNTRY} 无匹配 IP")
+            return []
 
-        # 3. 在匹配项中，按速度(Mbps)降序排列，取第一个
-        # 注意：如果表头有中文，请确保名称完全一致，如 '速度(Mbps)'
-        best_ip = filtered_df.sort_values(by='速度(Mbps)', ascending=False).iloc[0]['IP']
-        print(f"筛选出的最优 IP 为: {best_ip}")
-        return best_ip
+        # 2. 综合质量排序
+        # 优先选择 TCP 延迟低于 100ms 的，然后按速度从大到小排
+        # 如果都没有低于 100ms 的，则整体按速度排
+        quality_mask = filtered_df['TCP延迟(ms)'] < 100
+        if filtered_df[quality_mask].empty:
+            final_df = filtered_df.sort_values(by='速度(Mbps)', ascending=False)
+        else:
+            final_df = filtered_df[quality_mask].sort_values(by='速度(Mbps)', ascending=False)
+
+        top_5 = final_df.head(5)
+        print("筛选出的前 5 名 IP：")
+        print(top_5[['IP', '速度(Mbps)', 'TCP延迟(ms)']])
+        return top_5['IP'].tolist()
     except Exception as e:
-        print(f"读取数据失败: {e}")
-        return None
+        print(f"数据处理错误: {e}")
+        return []
 
-def update_cloudflare_dns(ip):
-    headers = {
-        "Authorization": f"Bearer {API_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    
-    # 1. 获取现有解析记录 ID
-    dns_url = f"https://api.cloudflare.com/client/v4/zones/{ZONE_ID}/dns_records"
-    res = requests.get(dns_url, headers=headers, params={"name": RECORD_NAME})
-    records = res.json().get('result', [])
-    
-    if not records:
-        print(f"未找到域名 {RECORD_NAME} 的解析记录，请先手动创建一条 A 记录")
-        return
+def update_cloudflare_dns(ip_list):
+    headers = {"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"}
+    base_url = f"https://api.cloudflare.com/client/v4/zones/{ZONE_ID}/dns_records"
 
-    record_id = records[0]['id']
-    current_ip = records[0]['content']
+    # 1. 获取当前域名下的所有 A 记录
+    res = requests.get(base_url, headers=headers, params={"name": RECORD_NAME, "type": "A"})
+    existing_records = res.json().get('result', [])
 
-    # 2. 如果 IP 没变，不更新
-    if current_ip == ip:
-        print(f"IP 未变化 ({ip})，跳过更新")
-        return
+    # 2. 删除旧的 A 记录 (清理干净，防止 IP 堆积)
+    for record in existing_records:
+        requests.delete(f"{base_url}/{record['id']}", headers=headers)
+        print(f"已删除旧记录: {record['content']}")
 
-    # 3. 更新 A 记录
-    update_data = {
-        "type": "A",
-        "name": RECORD_NAME,
-        "content": ip,
-        "ttl": 60,  # 选最快的 60s 生效
-        "proxied": False # 必须关闭小云朵
-    }
-    put_res = requests.put(f"{dns_url}/{record_id}", headers=headers, json=update_data)
-    if put_res.json().get('success'):
-        print(f"成功更新 {RECORD_NAME} -> {ip}")
-    else:
-        print(f"更新失败: {put_res.text}")
+    # 3. 添加新的前 5 名 IP
+    for ip in ip_list:
+        data = {
+            "type": "A",
+            "name": RECORD_NAME,
+            "content": ip,
+            "ttl": 60,
+            "proxied": False
+        }
+        post_res = requests.post(base_url, headers=headers, json=data)
+        if post_res.json().get('success'):
+            print(f"成功添加新记录: {ip}")
 
 if __name__ == "__main__":
-    target_ip = get_best_ip()
-    if target_ip:
-        update_cloudflare_dns(target_ip)
+    ips = get_top_5_ips()
+    if ips:
+        update_cloudflare_dns(ips)
+    else:
+        print("未筛选到有效 IP，不执行更新")
