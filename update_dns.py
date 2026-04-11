@@ -4,9 +4,9 @@ import pandas as pd
 
 # 配置
 API_TOKEN = os.getenv('CF_API_TOKEN')
-ZONE_ID = os.getenv('CF_ZONE_ID')
+ZONE_ID = os.getenv('CF_ZONE_ID')US
 RECORD_NAME = os.getenv('CF_RECORD_NAME')
-TARGET_COUNTRY = os.getenv('TARGET_COUNTRY', 'CA') 
+TARGET_COUNTRY = os.getenv('TARGET_COUNTRY', 'US') 
 SOURCE_URL = os.getenv('SOURCE_URL', 'https://raw.githubusercontent.com/xgonce/Cloudflare_IP/refs/heads/main/result.csv')
 
 def get_top_5_ips():
