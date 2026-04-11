@@ -1,0 +1,27 @@
+name: Auto Update DNS
+on:
+  schedule:
+    - cron: '0 */6 * * *' # 每4小时执行一次
+  workflow_dispatch: # 允许手动点击运行
+
+jobs:
+  run-task:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install requests pandas
+
+      - name: Run Script
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_RECORD_NAME: ${{ secrets.CF_RECORD_NAME }}
+        run: python update_dns.py
