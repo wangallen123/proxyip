@@ -1,8 +1,13 @@
-name: Auto Update DNS
+name: Auto Update DNS and Save TXT
+
 on:
   schedule:
-    - cron: '0 */6 * * *' # 每4小时执行一次
-  workflow_dispatch: # 允许手动点击运行
+    - cron: '0 */4 * * *'  # 每 4 小时执行一次
+  workflow_dispatch:      # 允许手动点击运行
+
+# 1. 必须赋予写入权限，否则 Actions 无法把 txt 推送到你的仓库
+permissions:
+  contents: write
 
 jobs:
   run-task:
@@ -23,8 +28,16 @@ jobs:
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
-          # 传递多任务变量
           CF_RECORD_NAMES: ${{ secrets.CF_RECORD_NAMES }}
           TARGET_COUNTRIES: ${{ secrets.TARGET_COUNTRIES }}
           SOURCE_URL: ${{ secrets.SOURCE_URL }}
         run: python update_dns.py
+
+      # 2. 自动提交并推送生成的 txt 文件回到 GitHub 仓库
+      - name: Commit and Push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add *.txt
+          # 检查是否有文件改动，有改动才 commit 和 push，防止报错
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update IP list files" && git push)
